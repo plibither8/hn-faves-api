@@ -1,0 +1,24 @@
+{
+	"name": "HN Favorites",
+	"version": 2,
+	"alias": "hn-faves.mihir.ch",
+	"github": {
+		"enabled": true,
+		"silent": true
+	},
+	"builds": [
+		{
+			"src": "index.js",
+			"use": "@now/node-server",
+			"config": {
+				"maxLambdaSize": "45mb"
+			}
+		}
+	],
+	"routes": [
+		{
+			"src": "/(.*)",
+			"dest": "index.js"
+		}
+	]
+}

@@ -1,0 +1,8 @@
+{
+	"private": true,
+	"scripts": {},
+	"devDependencies": {},
+	"dependencies": {
+		"x-ray": "^2.3.4"
+	}
+}
