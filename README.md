@@ -4,6 +4,8 @@ Quick and dirty Hacker News favorites API to get a users favorited items. Mostly
 
 ## Usage
 
+**Base URL:** [https://hn-faves.mihir.ch](https://hn-faves.mihir.ch) OR [https://hn-faves.now.sh](https://hn-faves.now.sh).
+
 ```text
 GET /:user
 GET /:user/stories

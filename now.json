@@ -1,7 +1,6 @@
 {
 	"name": "HN Favorites",
 	"version": 2,
-	"alias": "hn-faves.mihir.ch",
 	"github": {
 		"enabled": true,
 		"silent": true
