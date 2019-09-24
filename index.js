@@ -13,7 +13,7 @@ async function parse(id = '', comments = false, limit = 1, offset = 1) {
 	const articleId = '@id'
 	const more = 'a.morelink@href'
 
-	const body = { articleId }
+	const body = { id: articleId }
 
 	if (comments) {
 		body.link = 'span.age a@href'
