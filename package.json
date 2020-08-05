@@ -3,7 +3,7 @@
 	"scripts": {},
 	"devDependencies": {},
 	"dependencies": {
-		"fastify": "^2.8.0",
+		"fastify": "^2.15.1",
 		"x-ray": "^2.3.4"
 	}
 }
