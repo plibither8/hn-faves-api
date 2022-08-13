@@ -52,7 +52,7 @@ const fetchFaves = {
     const list = await getFavesHtmlList(options);
     return list.map((item) => ({
       id: Number(item.getAttribute("id")!),
-      url: `https://news.ycombinator.com${item
+      url: `https://news.ycombinator.com/${item
         .querySelector("span.age a")
         ?.getAttribute("href")!}`,
       user: item.querySelector(".hnuser")!.text,
