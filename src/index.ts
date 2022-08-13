@@ -16,7 +16,13 @@ type Fave = {
   id: number;
   url: string;
   type: string;
-} & ({ user: string } | { title: string });
+} & (
+  | { user: string }
+  | {
+      title: string;
+      hnUrl: string;
+    }
+);
 
 const router = Router();
 
@@ -44,6 +50,7 @@ const fetchFaves = {
     return list.map((item) => ({
       id: Number(item.getAttribute("id")!),
       url: item.querySelector("a.titlelink")!.getAttribute("href")!,
+      hnUrl: `https://news.ycombinator.com/item?id=${item.getAttribute("id")}`,
       title: item.querySelector("a.titlelink")!.text,
       type: "story",
     }));
