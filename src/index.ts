@@ -1,9 +1,11 @@
 import { Router, Request, Obj } from "itty-router";
 import { HTMLElement, parse } from "node-html-parser";
 
+type FaveType = "comments" | "stories";
+
 interface RequestParams extends Obj {
   id: string;
-  type: "comments" | "stories";
+  type: FaveType;
 }
 
 interface FaveOptions {
@@ -24,6 +26,8 @@ type Fave = {
     }
 );
 
+const MAX_RETRIES = 5;
+
 const router = Router();
 
 const getUrl = (options: FaveOptions): string => {
@@ -37,16 +41,31 @@ const getUrl = (options: FaveOptions): string => {
 
 const getFavesHtmlList = async (
   options: FaveOptions
-): Promise<HTMLElement[]> => {
+): Promise<HTMLElement[] | null> => {
   const url = getUrl(options);
   const html = await fetch(url).then((res) => res.text());
-  const list = parse(html).querySelectorAll(".athing");
+  const root = parse(html);
+  const list = root.querySelectorAll(".athing");
+  if (!list.length) {
+    const ERROR_STRING =
+      "Sorry, we're not able to serve your requests this quickly.";
+    const errorCell = root.querySelector(
+      "body > center > table > tbody > tr:nth-child(3) > td"
+    );
+    if (errorCell?.text.trim().includes(ERROR_STRING)) {
+      return null;
+    }
+  }
   return list;
 };
 
-const fetchFaves = {
-  stories: async (options: FaveOptions): Promise<Fave[]> => {
+const fetchFaves: Record<
+  FaveType,
+  (options: FaveOptions) => Promise<Fave[] | null>
+> = {
+  stories: async (options) => {
     const list = await getFavesHtmlList(options);
+    if (!list) return null;
     return list.map((item) => ({
       id: Number(item.getAttribute("id")!),
       url: item.querySelector("a.titlelink")!.getAttribute("href")!,
@@ -55,8 +74,9 @@ const fetchFaves = {
       type: "story",
     }));
   },
-  comments: async (options: FaveOptions): Promise<Fave[]> => {
+  comments: async (options) => {
     const list = await getFavesHtmlList(options);
+    if (!list) return null;
     return list.map((item) => ({
       id: Number(item.getAttribute("id")!),
       url: `https://news.ycombinator.com/${item
@@ -71,9 +91,18 @@ const fetchFaves = {
 const paginateAndCollect = async (
   type: "comments" | "stories",
   options: FaveOptions,
-  acc: Fave[] = []
+  acc: Fave[] = [],
+  retriesRemaining = MAX_RETRIES
 ): Promise<Fave[]> => {
   const faves = await fetchFaves[type](options);
+  if (!faves) {
+    // Quadratic backoff: 1s, 2s, 4s, 8s, 16s
+    const retryDelay = Math.pow(2, MAX_RETRIES - retriesRemaining) * 1000;
+    await new Promise<void>((resolve) => setTimeout(resolve, retryDelay));
+    return retriesRemaining > 0
+      ? paginateAndCollect(type, options, acc, retriesRemaining - 1)
+      : acc;
+  }
   const newAcc = [...acc, ...faves];
   if (faves.length < 30) return newAcc;
   return paginateAndCollect(type, { ...options, p: options.p + 1 }, newAcc);
