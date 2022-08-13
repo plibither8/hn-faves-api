@@ -44,17 +44,16 @@ const getFavesHtmlList = async (
 ): Promise<HTMLElement[] | null> => {
   const url = getUrl(options);
   const html = await fetch(url).then((res) => res.text());
+  if (html.length === 0) return null;
   const root = parse(html);
   const list = root.querySelectorAll(".athing");
   if (!list.length) {
     const ERROR_STRING =
       "Sorry, we're not able to serve your requests this quickly.";
     const errorCell = root.querySelector(
-      "body > center > table > tbody > tr:nth-child(3) > td"
+      "body > center > table > tr:nth-child(3) > td"
     );
-    if (errorCell?.text.trim().includes(ERROR_STRING)) {
-      return null;
-    }
+    if (errorCell?.text.trim() === ERROR_STRING) return null;
   }
   return list;
 };
@@ -89,7 +88,7 @@ const fetchFaves: Record<
 };
 
 const paginateAndCollect = async (
-  type: "comments" | "stories",
+  type: FaveType,
   options: FaveOptions,
   acc: Fave[] = [],
   retriesRemaining = MAX_RETRIES
@@ -105,6 +104,7 @@ const paginateAndCollect = async (
   }
   const newAcc = [...acc, ...faves];
   if (faves.length < 30) return newAcc;
+  await new Promise<void>((resolve) => setTimeout(resolve, 1000));
   return paginateAndCollect(type, { ...options, p: options.p + 1 }, newAcc);
 };
 
