@@ -1,5 +1,5 @@
 import { Router, Request, Obj } from "itty-router";
-import { parse } from "node-html-parser";
+import { HTMLElement, parse } from "node-html-parser";
 
 interface RequestParams extends Obj {
   id: string;
@@ -12,13 +12,11 @@ interface FaveOptions {
   p: number;
 }
 
-interface Fave {
-  id: string;
+type Fave = {
+  id: number;
   url: string;
-  isComment: boolean;
-  user?: string;
-  title?: string;
-}
+  type: string;
+} & ({ user: string } | { title: string });
 
 const router = Router();
 
@@ -31,70 +29,92 @@ const getUrl = (options: FaveOptions): string => {
   return url.toString();
 };
 
-const fetchFaves = async (options: FaveOptions): Promise<Fave[]> => {
+const getFavesHtmlList = async (
+  options: FaveOptions
+): Promise<HTMLElement[]> => {
   const url = getUrl(options);
-  const html = await fetch(url, {
-    cf: {
-      cacheTtl: 86400,
-      cacheEverything: true,
-    },
-  }).then((res) => res.text());
-  const faves: Fave[] = parse(html)
-    .querySelectorAll(".athing")
-    .map((item) => ({
-      id: item.getAttribute("id")!,
-      url: item
-        .querySelector(options.comments ? "span.age a" : "a.storylink")
-        ?.getAttribute("href")!,
-      isComment: options.comments,
-      ...(options.comments
-        ? {
-            user: item.querySelector(".hnuser")!.text,
-          }
-        : {
-            title: item.querySelector("a.titlelink")!.text,
-          }),
+  const html = await fetch(url).then((res) => res.text());
+  const list = parse(html).querySelectorAll(".athing");
+  return list;
+};
+
+const fetchFaves = {
+  stories: async (options: FaveOptions): Promise<Fave[]> => {
+    const list = await getFavesHtmlList(options);
+    return list.map((item) => ({
+      id: Number(item.getAttribute("id")!),
+      url: item.querySelector("a.titlelink")!.getAttribute("href")!,
+      title: item.querySelector("a.titlelink")!.text,
+      type: "story",
     }));
-  return faves;
+  },
+  comments: async (options: FaveOptions): Promise<Fave[]> => {
+    const list = await getFavesHtmlList(options);
+    return list.map((item) => ({
+      id: Number(item.getAttribute("id")!),
+      url: `https://news.ycombinator.com${item
+        .querySelector("span.age a")
+        ?.getAttribute("href")!}`,
+      user: item.querySelector(".hnuser")!.text,
+      type: "comment",
+    }));
+  },
 };
 
 const paginateAndCollect = async (
+  type: "comments" | "stories",
   options: FaveOptions,
   acc: Fave[] = []
 ): Promise<Fave[]> => {
-  const faves = await fetchFaves(options);
-  if (faves.length === 0) return acc;
-  return paginateAndCollect({ ...options, p: options.p + 1 }, [
-    ...acc,
-    ...faves,
-  ]);
+  const faves = await fetchFaves[type](options);
+  const newAcc = [...acc, ...faves];
+  if (faves.length < 30) return newAcc;
+  return paginateAndCollect(type, { ...options, p: options.p + 1 }, newAcc);
 };
 
-router.get("/:id/:type", async (request: Request) => {
+const getCacheKey = (request: Request): string => {
+  const { id, type } = request.params as RequestParams;
+  const { origin } = new URL(request.url);
+  return `${origin}/${id}/${type}`;
+};
+
+const respondWithCache = async (request: Request) => {
+  const cache = caches.default;
+  const cacheKey = getCacheKey(request);
+  const response = await cache.match(cacheKey);
+  if (response) return response;
+};
+
+router.get("/:id/:type", respondWithCache, async (request: Request) => {
   const { id, type } = request.params as RequestParams;
 
   if (!id) return new Response("Invalid ID", { status: 400 });
   if (!["comments", "stories"].includes(type))
     return new Response("Invalid type", { status: 400 });
 
-  // If cache hit, return cached response
-  const cacheKey = request.url;
-  const cache = caches.default;
-  let response = await cache.match(cacheKey);
-  if (response) return response;
-
-  const faves = await paginateAndCollect({
+  const faves = await paginateAndCollect(type, {
     id,
-    comments: type === "comments",
     p: 1,
+    comments: type === "comments",
   });
-  response = Response.json(faves, {
+  const response = Response.json(faves, {
     headers: {
       "Cache-Control": "max-age=86400",
     },
   });
+
+  // Cache the response and return it
+  const cache = caches.default;
+  const cacheKey = getCacheKey(request);
   await cache.put(cacheKey, response.clone());
   return response;
+});
+
+router.get("/:id/:type/delete-cache", async (request: Request) => {
+  const cache = caches.default;
+  const cacheKey = getCacheKey(request);
+  const deleted = await cache.delete(cacheKey);
+  return new Response(deleted ? "Cache deleted" : "Cache not found");
 });
 
 router.all("*", () => {
