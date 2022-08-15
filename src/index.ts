@@ -121,30 +121,34 @@ const respondWithCache = async (request: Request) => {
   if (response) return response;
 };
 
-router.get("/:id/:type", respondWithCache, async (request: Request) => {
-  const { id, type } = request.params as RequestParams;
+router.get(
+  "/:id/:type",
+  respondWithCache,
+  async (request: Request, ctx: ExecutionContext) => {
+    const { id, type } = request.params as RequestParams;
 
-  if (!id) return new Response("Invalid ID", { status: 400 });
-  if (!["comments", "stories"].includes(type))
-    return new Response("Invalid type", { status: 400 });
+    if (!id) return new Response("Invalid ID", { status: 400 });
+    if (!["comments", "stories"].includes(type))
+      return new Response("Invalid type", { status: 400 });
 
-  const faves = await paginateAndCollect(type, {
-    id,
-    p: 1,
-    comments: type === "comments",
-  });
-  const response = Response.json(faves, {
-    headers: {
-      "Cache-Control": "max-age=86400",
-    },
-  });
+    const faves = await paginateAndCollect(type, {
+      id,
+      p: 1,
+      comments: type === "comments",
+    });
+    const response = Response.json(faves, {
+      headers: {
+        "Cache-Control": "max-age=86400",
+      },
+    });
 
-  // Cache the response and return it
-  const cache = caches.default;
-  const cacheKey = getCacheKey(request);
-  await cache.put(cacheKey, response.clone());
-  return response;
-});
+    // Cache the response and return it
+    const cache = caches.default;
+    const cacheKey = getCacheKey(request);
+    ctx.waitUntil(cache.put(cacheKey, response.clone()));
+    return response;
+  }
+);
 
 router.get("/:id/:type/delete-cache", async (request: Request) => {
   const cache = caches.default;
@@ -164,7 +168,11 @@ Visit https://github.com/plibither8/hn-faves-api for more info.`);
 });
 
 export default {
-  async fetch(request: Request): Promise<Response> {
-    return router.handle(request);
+  async fetch(
+    request: Request,
+    _env: any,
+    ctx: ExecutionContext
+  ): Promise<Response> {
+    return router.handle(request, ctx);
   },
 };
