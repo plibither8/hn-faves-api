@@ -1,12 +1,7 @@
-import { Router, Request, Obj } from "itty-router";
+import { Context, Hono, Next } from "hono";
 import { HTMLElement, parse } from "node-html-parser";
 
 type FaveType = "comments" | "stories";
-
-interface RequestParams extends Obj {
-  id: string;
-  type: FaveType;
-}
 
 interface FaveOptions {
   id: string;
@@ -28,7 +23,7 @@ type Fave = {
 
 const MAX_RETRIES = 5;
 
-const router = Router();
+const app = new Hono();
 
 const getUrl = (options: FaveOptions): string => {
   const BASE_URL = "https://news.ycombinator.com/favorites";
@@ -43,7 +38,8 @@ const getFavesHtmlList = async (
   options: FaveOptions
 ): Promise<HTMLElement[] | null> => {
   const url = getUrl(options);
-  const html = await fetch(url).then((res) => res.text());
+  const res = await fetch(url);
+  const html = await res.text();
   if (html.length === 0) return null;
   const root = parse(html);
   const list = root.querySelectorAll(".athing");
@@ -93,7 +89,7 @@ const paginateAndCollect = async (
   acc: Fave[] = [],
   retriesRemaining = MAX_RETRIES
 ): Promise<Fave[]> => {
-  const faves = await fetchFaves[type](options);
+  const faves = (await fetchFaves[type](options)) ?? [];
   if (!faves) {
     // Quadratic backoff: 1s, 2s, 4s, 8s, 16s
     const retryDelay = Math.pow(2, MAX_RETRIES - retriesRemaining) * 1000;
@@ -108,71 +104,55 @@ const paginateAndCollect = async (
   return paginateAndCollect(type, { ...options, p: options.p + 1 }, newAcc);
 };
 
-const getCacheKey = (request: Request): string => {
-  const { id, type } = request.params as RequestParams;
+const getCacheKey = (request: Request<"id" | "type">): string => {
+  const id = request.param("id");
+  const type = request.param("type");
   const { origin } = new URL(request.url);
   return `${origin}/${id}/${type}`;
 };
 
-const respondWithCache = async (request: Request) => {
+app.get("/:id/:type", async (ctx) => {
   const cache = caches.default;
-  const cacheKey = getCacheKey(request);
-  const response = await cache.match(cacheKey);
+  const cacheKey = getCacheKey(ctx.req);
+  let response = await cache.match(cacheKey);
   if (response) return response;
-};
 
-router.get(
-  "/:id/:type",
-  respondWithCache,
-  async (request: Request, ctx: ExecutionContext) => {
-    const { id, type } = request.params as RequestParams;
+  const id = ctx.req.param("id");
+  const type = ctx.req.param("type") as FaveType;
 
-    if (!id) return new Response("Invalid ID", { status: 400 });
-    if (!["comments", "stories"].includes(type))
-      return new Response("Invalid type", { status: 400 });
+  if (!id) return ctx.text("Invalid ID", 400);
+  if (!["comments", "stories"].includes(type))
+    return ctx.text("Invalid type", 400);
 
-    const faves = await paginateAndCollect(type, {
-      id,
-      p: 1,
-      comments: type === "comments",
-    });
-    const response = Response.json(faves, {
-      headers: {
-        "Cache-Control": "max-age=86400",
-      },
-    });
+  const faves = await paginateAndCollect(type, {
+    id,
+    p: 1,
+    comments: type === "comments",
+  });
+  response = ctx.json(faves, 200, {
+    "Cache-Control": "max-age=86400",
+  });
 
-    // Cache the response and return it
-    const cache = caches.default;
-    const cacheKey = getCacheKey(request);
-    ctx.waitUntil(cache.put(cacheKey, response.clone()));
-    return response;
-  }
-);
-
-router.get("/:id/:type/delete-cache", async (request: Request) => {
-  const cache = caches.default;
-  const cacheKey = getCacheKey(request);
-  const deleted = await cache.delete(cacheKey);
-  return new Response(deleted ? "Cache deleted" : "Cache not found");
+  // Cache the response and return it
+  ctx.executionCtx.waitUntil(cache.put(cacheKey, response.clone()));
+  return response;
 });
 
-router.all("*", () => {
-  return new Response(`Usage:
+app.get("/:id/:type/delete-cache", async (ctx) => {
+  const cache = caches.default;
+  const cacheKey = getCacheKey(ctx.req);
+  const deleted = await cache.delete(cacheKey);
+  return ctx.text(deleted ? "Cache deleted" : "Cache not found");
+});
+
+app.all("*", (ctx) =>
+  ctx.text(`Usage:
 ======
 
 GET /:username/stories
 GET /:username/comments
 
-Visit https://github.com/plibither8/hn-faves-api for more info.`);
-});
+Visit https://github.com/plibither8/hn-faves-api for more info.`)
+);
 
-export default {
-  async fetch(
-    request: Request,
-    _env: any,
-    ctx: ExecutionContext
-  ): Promise<Response> {
-    return router.handle(request, ctx);
-  },
-};
+export default app;
