@@ -1,4 +1,4 @@
-import { Context, Hono, Next } from "hono";
+import { Hono } from "hono";
 import { HTMLElement, parse } from "node-html-parser";
 
 type FaveType = "comments" | "stories";
@@ -105,8 +105,7 @@ const paginateAndCollect = async (
 };
 
 const getCacheKey = (request: Request<"id" | "type">): string => {
-  const id = request.param("id");
-  const type = request.param("type");
+  const { id, type } = request.param();
   const { origin } = new URL(request.url);
   return `${origin}/${id}/${type}`;
 };
@@ -117,14 +116,12 @@ app.get("/:id/:type", async (ctx) => {
   let response = await cache.match(cacheKey);
   if (response) return response;
 
-  const id = ctx.req.param("id");
-  const type = ctx.req.param("type") as FaveType;
-
+  const { id, type } = ctx.req.param();
   if (!id) return ctx.text("Invalid ID", 400);
   if (!["comments", "stories"].includes(type))
     return ctx.text("Invalid type", 400);
 
-  const faves = await paginateAndCollect(type, {
+  const faves = await paginateAndCollect(type as FaveType, {
     id,
     p: 1,
     comments: type === "comments",
