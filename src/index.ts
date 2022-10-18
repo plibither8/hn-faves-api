@@ -63,9 +63,9 @@ const fetchFaves: Record<
     if (!list) return null;
     return list.map((item) => ({
       id: Number(item.getAttribute("id")!),
-      url: item.querySelector("a.titlelink")!.getAttribute("href")!,
+      title: item.querySelector("span.titleline a")!.text,
+      url: item.querySelector("span.titleline a")!.getAttribute("href")!,
       hnUrl: `https://news.ycombinator.com/item?id=${item.getAttribute("id")}`,
-      title: item.querySelector("a.titlelink")!.text,
       type: "story",
     }));
   },
